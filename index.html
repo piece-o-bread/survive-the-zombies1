@@ -1,41 +1,59 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8" />
 <title>3D Shooter</title>
 <style>
-body { margin:0; overflow:hidden; background:#000; }
-#overlay {
-  position:absolute; left:50%; top:50%;
-  transform:translate(-50%,-50%);
-  color:white; text-align:center;
-  background: rgba(0,0,0,0.5);
-  padding:12px 18px; border-radius:8px;
-  cursor:pointer;
-  font-family: sans-serif;
-  z-index: 10;
-}
-#crosshair {
-  position:absolute; top:50%; left:50%;
-  width:20px; height:20px; transform:translate(-50%,-50%);
-  z-index: 5;
-}
-#crosshair:before, #crosshair:after {
-  content:""; position:absolute; left:50%; top:50%;
-  background:white; transform:translate(-50%,-50%);
-}
-#crosshair:before { width:2px; height:14px; }
-#crosshair:after  { width:14px; height:2px; }
-#scoreUI {
-  position:absolute; top:10px; right:10px;
-  color:white; font-size:20px;
-  font-family: sans-serif;
-  z-index: 5;
-}
+  body { margin: 0; overflow: hidden; background: #000; }
+  #overlay {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 12px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: sans-serif;
+    z-index: 10;
+    user-select: none;
+  }
+  #crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    pointer-events: none;
+  }
+  #crosshair:before, #crosshair:after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    background: white;
+    transform: translate(-50%, -50%);
+  }
+  #crosshair:before { width: 2px; height: 14px; }
+  #crosshair:after { width: 14px; height: 2px; }
+  #scoreUI {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    color: white;
+    font-size: 20px;
+    font-family: sans-serif;
+    z-index: 5;
+    user-select: none;
+  }
 </style>
 </head>
 <body>
-<div id="overlay">Click to play<br>WASD/Arrow to move, Space to jump, mouse to look :)</div>
+<div id="overlay">Click to play<br>WASD/Arrow to move, Space to jump, mouse to look</div>
 <div id="crosshair" style="display:none"></div>
 <div id="scoreUI">Score: 0 | Wave: 1</div>
 
@@ -111,27 +129,45 @@ window.addEventListener("keyup", e => keys[e.key] = false);
 const overlay = document.getElementById("overlay");
 const crosshair = document.getElementById("crosshair");
 
+let pendingRestart = false;
+let spawningWave = false;
+let gameStarted = false;
+
+function showInstructions() {
+  overlay.style.display = "block";
+  overlay.innerHTML = "Click to play<br>WASD/Arrow to move, Space to jump, mouse to look";
+}
+
 overlay.addEventListener("click", () => {
+  gameStarted = true;
+  if (pendingRestart) {
+    restartGame();
+    pendingRestart = false;
+  }
   document.body.requestPointerLock();
 });
 
 document.addEventListener("pointerlockchange", () => {
   const locked = document.pointerLockElement === document.body;
   canMove = locked;
-  overlay.style.display = locked ? "none" : "block";
   crosshair.style.display = locked ? "block" : "none";
+
+  if (locked) {
+    overlay.style.display = "none";
+  } else if (pendingRestart) {
+    overlay.style.display = "block";
+  } else {
+    showInstructions();
+  }
 });
 
 /* Mouse look */
 document.addEventListener("mousemove", e => {
   if (!canMove) return;
-
   yaw -= e.movementX * 0.002;
   pitch -= e.movementY * 0.002;
-
   const limit = Math.PI / 2 - 0.02;
   pitch = Math.max(-limit, Math.min(limit, pitch));
-
   player.rotation.y = yaw;
   camera.rotation.x = pitch;
 });
@@ -165,7 +201,6 @@ let wave = 1;
 function spawnEnemy() {
   const size = 3;
   const height = 5;
-
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(size, height, size),
     new THREE.MeshStandardMaterial({ color: 0x884422 })
@@ -173,7 +208,6 @@ function spawnEnemy() {
 
   const angle = Math.random() * Math.PI * 2;
   const distance = 80 + Math.random() * 80;
-
   mesh.position.set(
     player.position.x + Math.cos(angle) * distance,
     height / 2,
@@ -181,7 +215,6 @@ function spawnEnemy() {
   );
 
   scene.add(mesh);
-
   enemies.push({
     mesh,
     box: new THREE.Box3().setFromObject(mesh),
@@ -192,14 +225,29 @@ function spawnEnemy() {
 
 function spawnWave() {
   const count = 5 + wave * 2;
+  spawningWave = true;
+
+  if (gameStarted && document.pointerLockElement === document.body) {
+    overlay.style.display = "block";
+    overlay.innerHTML = "Wave " + wave;
+  }
 
   for (let i = 0; i < count; i++) {
     setTimeout(() => {
-      if (canMove || enemies.length === 0) {
-        spawnEnemy();
+      spawnEnemy();
+      if (i === 0) {
+        spawningWave = false;
       }
     }, i * 300);
   }
+
+  setTimeout(() => {
+    if (document.pointerLockElement === document.body) {
+      overlay.style.display = "none";
+    } else if (!pendingRestart) {
+      showInstructions();
+    }
+  }, 1000);
 }
 
 /* ---------- BULLETS ---------- */
@@ -213,7 +261,6 @@ class Bullet {
     );
     this.mesh.position.copy(pos);
     scene.add(this.mesh);
-
     this.dir = dir.clone().normalize();
     this.speed = 70;
     this.alive = true;
@@ -232,6 +279,7 @@ class Bullet {
         e.health--;
         e.mesh.material.color.set(0xff0000);
         e.mesh.scale.set(1.2, 1.2, 1.2);
+
         setTimeout(() => {
           if (e.mesh) {
             e.mesh.material.color.set(0x884422);
@@ -284,38 +332,47 @@ function resetPlayer() {
   camera.rotation.set(0, 0, 0);
 }
 
+function clearEnemies() {
+  for (const e of enemies) {
+    scene.remove(e.mesh);
+  }
+  enemies.length = 0;
+}
+
+function clearBullets() {
+  for (const b of bullets) {
+    scene.remove(b.mesh);
+    b.alive = false;
+  }
+  bullets.length = 0;
+}
+
+function restartGame() {
+  score = 0;
+  wave = 1;
+  spawningWave = false;
+  pendingRestart = false;
+  clearEnemies();
+  clearBullets();
+  resetPlayer();
+  showInstructions();
+  spawnWave();
+}
+
 /* ---------- DEATH / RESTART ---------- */
 function triggerDeath() {
   if (!canMove) return;
 
   canMove = false;
+  pendingRestart = true;
   playPlayerDeath();
 
-  document.exitPointerLock();
+  if (document.pointerLockElement === document.body) {
+    document.exitPointerLock();
+  }
 
   overlay.style.display = "block";
-  overlay.innerHTML = "YOU DIED :( <br> Score: " + score + "<br>Click to restart";
-  overlay.onclick = () => {
-    score = 0;
-    wave = 1;
-
-    for (const e of enemies) {
-      scene.remove(e.mesh);
-    }
-    enemies.length = 0;
-
-    for (const b of bullets) {
-      scene.remove(b.mesh);
-      b.alive = false;
-    }
-    bullets.length = 0;
-
-    resetPlayer();
-    spawnWave();
-
-    overlay.innerHTML = "Click to play<br>WASD/Arrow to move, Space to jump, mouse to look :)";
-    document.body.requestPointerLock();
-  };
+  overlay.innerHTML = "YOU DIED :(<br>Score: " + score + "<br>Click to restart";
 }
 
 /* ---------- UPDATE ---------- */
@@ -377,22 +434,14 @@ function update(delta) {
     }
 
     e.box.setFromObject(e.mesh);
-
     if (playerBox.intersectsBox(e.box)) {
       triggerDeath();
       return;
     }
   }
 
-  if (enemies.length === 0) {
+  if (enemies.length === 0 && !spawningWave) {
     wave++;
-    overlay.style.display = "block";
-    overlay.innerHTML = "Wave " + wave;
-    setTimeout(() => {
-      if (document.pointerLockElement === document.body) {
-        overlay.style.display = "none";
-      }
-    }, 1000);
     spawnWave();
   }
 }
@@ -411,14 +460,12 @@ function animate() {
   }
 
   update(delta);
-
-  document.getElementById("scoreUI").innerText =
-    "Score: " + score + " | Wave: " + wave;
-
+  document.getElementById("scoreUI").innerText = "Score: " + score + " | Wave: " + wave;
   renderer.render(scene, camera);
 }
-animate();
 
+animate();
+showInstructions();
 spawnWave();
 
 window.addEventListener("resize", () => {
